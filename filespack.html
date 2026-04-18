@@ -1,0 +1,353 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>CodePack Pro - 高性能版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Fira+Code&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .folder-content { display: none; }
+        .folder-content.open { display: block; }
+        .rotate-90 { transform: rotate(90deg); }
+        #output { font-family: 'Fira Code', monospace; scroll-behavior: smooth; }
+        
+        /* 强制加速渲染 */
+        textarea { contain: content; border: 2px solid transparent; transition: border 0.3s; }
+        .is-packing { pointer-events: none; opacity: 0.7; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-sm">
+
+    <header class="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shadow-2xl z-20">
+        <div class="flex items-center gap-3 shrink-0">
+            <div class="bg-blue-600 p-2 rounded-lg shadow-lg shadow-blue-500/20"><i data-lucide="zap" class="w-5 h-5 fill-white text-yellow-300"></i></div>
+            <h1 class="text-lg font-bold tracking-tight">CodePack <span class="text-blue-400">Turbo</span></h1>
+        </div>
+        
+        <div id="drop-zone" class="flex-1 max-w-xl mx-8 border-2 border-dashed border-slate-700 rounded-xl py-2 px-4 text-center transition-all cursor-pointer hover:border-blue-500 hover:bg-slate-800 group overflow-hidden">
+            <input type="file" id="fileInput" webkitdirectory directory multiple class="hidden">
+            <div class="flex items-center justify-center gap-3 text-slate-400 group-hover:text-blue-400 truncate">
+                <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i>
+                <span id="drop-text">点击或拖拽文件夹载入</span>
+            </div>
+        </div>
+
+        <div class="flex gap-2 items-center">
+            <select id="configSelect" onchange="onPresetSelected(this)" class="bg-slate-800 text-xs rounded-lg px-3 py-2 outline-none min-w-[120px] text-slate-300 border-none">
+                <option value="">-- 选择预设 --</option>
+            </select>
+            <button onclick="saveCurrentPreset()" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg transition"><i data-lucide="bookmark" class="w-4 h-4"></i></button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        <!-- Sidebar -->
+        <div class="w-80 bg-white border-r border-slate-200 flex flex-col shadow-lg">
+            <div class="p-4 border-b bg-slate-50 flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                <span>文件列表</span>
+                <div class="flex gap-3">
+                    <button onclick="toggleAllCheck(true)" class="hover:text-blue-600">全选</button>
+                    <button onclick="toggleAllCheck(false)" class="hover:text-red-500">清空</button>
+                </div>
+            </div>
+            <div id="tree-container" class="flex-1 overflow-y-auto p-2 custom-scrollbar"></div>
+        </div>
+
+        <!-- Preview -->
+        <div class="flex-1 flex flex-col relative bg-slate-50">
+            <!-- Loading Overlay -->
+            <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+                <p class="text-slate-600 font-bold animate-pulse" id="loadingMsg">正在读取并合并...</p>
+            </div>
+
+            <div class="p-4 bg-white border-b flex justify-between items-center z-10">
+                <div id="statusInfo" class="text-[11px] font-mono text-slate-500">就绪</div>
+                <div class="flex gap-3">
+                    <button id="packBtn" onclick="packFiles()" class="bg-blue-600 text-white px-10 py-2.5 rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center gap-2 font-bold text-sm">
+                        打包并合并
+                    </button>
+                    <button onclick="copyContent()" class="bg-slate-800 text-white px-6 py-2.5 rounded-xl hover:bg-slate-900 transition flex items-center gap-2 text-sm font-medium">
+                        <i data-lucide="copy" class="w-4 h-4 text-slate-400"></i> 一键复制
+                    </button>
+                    <button onclick="downloadAsFile()" class="bg-emerald-600 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition flex items-center gap-2 text-sm font-medium">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex-1 p-6 flex flex-col overflow-hidden">
+                <div id="previewNotice" class="hidden mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-700 text-xs flex items-center gap-2">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i> 
+                    内容过大 (超过100KB)，当前仅显示缩略预览。点击“一键复制”可获取完整内容。
+                </div>
+                <textarea id="output" readonly 
+                    class="flex-1 w-full p-8 bg-white border border-slate-200 rounded-2xl shadow-inner outline-none text-slate-600 text-[13px] custom-scrollbar resize-none"
+                    placeholder="等待打包..."></textarea>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let fileMap = new Map();
+        let currentFullContent = ""; // 存放在内存中的完整数据
+        let currentTreeData = null;
+        let presets = JSON.parse(localStorage.getItem('codepack_turbo_presets') || '[]');
+
+        lucide.createIcons();
+        updatePresetDropdown();
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => handleFileObjects(Array.from(e.target.files));
+
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+        dropZone.ondrop = async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const items = e.dataTransfer.items;
+            const fileList = [];
+            for (let item of items) {
+                const entry = item.webkitGetAsEntry();
+                if (entry) await getAllFilesFromEntry(entry, '', fileList);
+            }
+            handleFileObjects(fileList);
+        };
+
+        async function getAllFilesFromEntry(entry, path, fileList) {
+            if (entry.isFile) {
+                const file = await new Promise(res => entry.file(res));
+                Object.defineProperty(file, 'webkitRelativePath', { value: path + entry.name, writable: false });
+                fileList.push(file);
+            } else if (entry.isDirectory) {
+                const reader = entry.createReader();
+                let entries = [];
+                const readAll = async () => {
+                    const results = await new Promise(res => reader.readEntries(res));
+                    if (results.length > 0) {
+                        entries = entries.concat(results);
+                        await readAll();
+                    }
+                };
+                await readAll();
+                for (let child of entries) {
+                    await getAllFilesFromEntry(child, path + entry.name + '/', fileList);
+                }
+            }
+        }
+
+        function handleFileObjects(files) {
+            if (!files || files.length === 0) return;
+            const tree = { name: 'Root', type: 'folder', children: new Map() };
+            fileMap.clear();
+            const ignored = ['node_modules', '.git', 'dist', 'build', '.vscode', '.DS_Store', 'package-lock.json', 'yarn.lock', 'public', 'assets'];
+
+            files.forEach(file => {
+                const relPath = file.webkitRelativePath || file.name;
+                const parts = relPath.split('/');
+                if (parts.some(p => ignored.includes(p))) return;
+                let current = tree;
+                parts.forEach((part, i) => {
+                    if (i === parts.length - 1) {
+                        current.children.set(part, { name: part, type: 'file', path: relPath });
+                        fileMap.set(relPath, file);
+                    } else {
+                        if (!current.children.has(part)) {
+                            current.children.set(part, { name: part, type: 'folder', children: new Map() });
+                        }
+                        current = current.children.get(part);
+                    }
+                });
+            });
+
+            const transform = (node) => {
+                if (node.type === 'file') return node;
+                return {
+                    ...node,
+                    children: Array.from(node.children.values())
+                        .sort((a,b) => a.type === b.type ? a.name.localeCompare(b.name) : (a.type === 'folder' ? -1 : 1))
+                        .map(transform)
+                };
+            };
+            const temp = transform(tree);
+            currentTreeData = temp.children.length === 1 ? temp.children[0] : temp;
+            renderTree();
+            updateStats();
+        }
+
+        function renderTree() {
+            document.getElementById('tree-container').innerHTML = createHtml(currentTreeData);
+            lucide.createIcons();
+        }
+
+        function createHtml(node) {
+            const isFolder = node.type === 'folder';
+            return `
+                <div class="tree-node">
+                    <div class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded-md cursor-pointer" onclick="${isFolder ? 'toggleFolder(this)' : ''}">
+                        ${isFolder ? '<i data-lucide="chevron-right" class="w-3.5 h-3.5 transition-transform arrow-icon"></i>' : '<span class="w-3.5"></span>'}
+                        <input type="checkbox" class="file-check w-4 h-4 rounded border-slate-300" data-path="${node.path || ''}" onclick="onCheck(event, this, '${node.type}')">
+                        <i data-lucide="${isFolder ? 'folder' : 'file-code'}" class="w-4 h-4 ${isFolder ? 'text-blue-500' : 'text-slate-400'}"></i>
+                        <span class="truncate text-slate-700">${node.name}</span>
+                    </div>
+                    ${isFolder ? `<div class="folder-content ml-4 border-l border-slate-100 pl-2">${node.children.map(createHtml).join('')}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function toggleFolder(el) {
+            el.nextElementSibling?.classList.toggle('open');
+            el.querySelector('.arrow-icon')?.classList.toggle('rotate-90');
+        }
+
+        function onCheck(e, cb, type) {
+            e.stopPropagation();
+            if (type === 'folder') {
+                cb.closest('.tree-node').querySelector('.folder-content')?.querySelectorAll('input').forEach(i => { i.checked = cb.checked; i.indeterminate = false; });
+            }
+            updateIndeterminate();
+            updateStats();
+        }
+
+        function updateIndeterminate() {
+            const contents = Array.from(document.querySelectorAll('.folder-content')).reverse();
+            contents.forEach(content => {
+                const parentCb = content.previousElementSibling.querySelector('input');
+                const childCbs = Array.from(content.querySelectorAll(':scope > .tree-node > div > input'));
+                const checked = childCbs.filter(c => c.checked).length;
+                const indet = childCbs.filter(c => c.indeterminate).length;
+                if (checked === childCbs.length && checked > 0) { parentCb.checked = true; parentCb.indeterminate = false; }
+                else if (checked > 0 || indet > 0) { parentCb.checked = false; parentCb.indeterminate = true; }
+                else { parentCb.checked = false; parentCb.indeterminate = false; }
+            });
+        }
+
+        function updateStats() {
+            const count = Array.from(document.querySelectorAll('.file-check:checked')).filter(c => c.dataset.path).length;
+            document.getElementById('statusInfo').innerText = `已选文件: ${count}`;
+        }
+
+        function toggleAllCheck(s) {
+            document.querySelectorAll('.file-check').forEach(c => { c.checked = s; c.indeterminate = false; });
+            updateStats();
+        }
+
+        // --- 核心优化：高性能打包 ---
+        async function packFiles() {
+            const selected = Array.from(document.querySelectorAll('.file-check:checked')).filter(c => c.dataset.path);
+            if (selected.length === 0) return alert("请先选择文件");
+
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.remove('hidden');
+            
+            // 使用 setTimeout 释放主线程让 Loading 能够渲染
+            setTimeout(async () => {
+                const chunks = [`/* PROJECT PACK - ${new Date().toLocaleString()} */\n\n`];
+                let totalSize = 0;
+
+                try {
+                    for (let cb of selected) {
+                        const path = cb.dataset.path;
+                        const file = fileMap.get(path);
+                        if (file) {
+                            const text = await file.text();
+                            chunks.push(`\n/* --- FILE: ${path} --- */\n\`\`\`\n`);
+                            chunks.push(text);
+                            chunks.push(`\n\`\`\`\n`);
+                            totalSize += text.length;
+                        }
+                    }
+
+                    // 合并大字符串
+                    currentFullContent = chunks.join('');
+                    const outputArea = document.getElementById('output');
+                    const notice = document.getElementById('previewNotice');
+
+                    // 如果内容 > 100KB，则只渲染预览，防止卡顿
+                    const PREVIEW_LIMIT = 100 * 1024;
+                    if (currentFullContent.length > PREVIEW_LIMIT) {
+                        outputArea.value = currentFullContent.substring(0, PREVIEW_LIMIT) + "\n\n...... [内容过长已截断预览，请直接点击复制获取全量数据] ......";
+                        notice.classList.remove('hidden');
+                    } else {
+                        outputArea.value = currentFullContent;
+                        notice.classList.add('hidden');
+                    }
+                    
+                    outputArea.style.borderColor = "#3b82f6";
+                    setTimeout(() => outputArea.style.borderColor = "#e2e8f0", 500);
+                } catch (e) {
+                    alert("处理文件出错: " + e.message);
+                } finally {
+                    overlay.classList.add('hidden');
+                }
+            }, 50);
+        }
+
+        // 核心优化：直接从内存复制，绕过编辑框
+        async function copyContent() {
+            if (!currentFullContent) return alert("请先打包内容");
+            try {
+                await navigator.clipboard.writeText(currentFullContent);
+                alert("完整内容已成功复制到剪贴板！");
+            } catch (err) {
+                // 回退方案
+                const area = document.getElementById('output');
+                area.select();
+                document.execCommand('copy');
+                alert("已通过预览框复制（注意：如果内容超大可能不完整）");
+            }
+        }
+
+        function downloadAsFile() {
+            if (!currentFullContent) return alert("请先打包内容");
+            const blob = new Blob([currentFullContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `project_pack_${Date.now()}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // --- 历史记录 ---
+        function onPresetSelected(s) {
+            const i = s.value; if (i === "") return;
+            applyPreset(i);
+            s.selectedIndex = 0;
+        }
+
+        function applyPreset(i) {
+            const p = presets[i]; if (!p) return;
+            document.querySelectorAll('.file-check').forEach(cb => {
+                cb.checked = p.selected.includes(cb.dataset.path);
+                cb.indeterminate = false;
+                if (cb.checked) {
+                    let pa = cb.closest('.folder-content');
+                    while(pa) { pa.classList.add('open'); pa.previousElementSibling.querySelector('.arrow-icon')?.classList.add('rotate-90'); pa = pa.parentElement.closest('.folder-content'); }
+                }
+            });
+            updateIndeterminate();
+            updateStats();
+        }
+
+        function saveCurrentPreset() {
+            const n = prompt("预设名称:"); if (!n) return;
+            const s = Array.from(document.querySelectorAll('.file-check:checked')).map(c => c.dataset.path).filter(Boolean);
+            presets.push({ name: n, selected: s });
+            localStorage.setItem('codepack_turbo_presets', JSON.stringify(presets));
+            updatePresetDropdown();
+        }
+
+        function updatePresetDropdown() {
+            document.getElementById('configSelect').innerHTML = '<option value="">-- 选择预设 --</option>' + presets.map((p,i) => `<option value="${i}">${p.name}</option>`).join('');
+        }
+    </script>
+</body>
+</html>
