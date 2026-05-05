@@ -243,34 +243,40 @@
         async function packFiles() {
             const selected = Array.from(document.querySelectorAll('.file-check:checked')).filter(c => c.dataset.path);
             if (selected.length === 0) return alert("请先选择文件");
-
+        
             const overlay = document.getElementById('loadingOverlay');
             overlay.classList.remove('hidden');
             
-            // 使用 setTimeout 释放主线程让 Loading 能够渲染
             setTimeout(async () => {
                 const chunks = [`/* PROJECT PACK - ${new Date().toLocaleString()} */\n\n`];
-                let totalSize = 0;
-
+                
                 try {
                     for (let cb of selected) {
                         const path = cb.dataset.path;
                         const file = fileMap.get(path);
                         if (file) {
-                            const text = await file.text();
+                            // --- 修复乱码的核心逻辑开始 ---
+                            const buffer = await file.arrayBuffer();
+                            const utf8Decoder = new TextDecoder('utf-8');
+                            let text = utf8Decoder.decode(buffer);
+        
+                            // 如果检测到 UTF-8 替换字符，说明可能是 GBK 编码
+                            if (text.includes('\ufffd')) {
+                                const gbkDecoder = new TextDecoder('gbk');
+                                text = gbkDecoder.decode(buffer);
+                            }
+                            // --- 修复乱码的核心逻辑结束 ---
+        
                             chunks.push(`\n/* --- FILE: ${path} --- */\n\`\`\`\n`);
                             chunks.push(text);
                             chunks.push(`\n\`\`\`\n`);
-                            totalSize += text.length;
                         }
                     }
-
-                    // 合并大字符串
+        
                     currentFullContent = chunks.join('');
                     const outputArea = document.getElementById('output');
                     const notice = document.getElementById('previewNotice');
-
-                    // 如果内容 > 100KB，则只渲染预览，防止卡顿
+        
                     const PREVIEW_LIMIT = 100 * 1024;
                     if (currentFullContent.length > PREVIEW_LIMIT) {
                         outputArea.value = currentFullContent.substring(0, PREVIEW_LIMIT) + "\n\n...... [内容过长已截断预览，请直接点击复制获取全量数据] ......";
@@ -283,6 +289,7 @@
                     outputArea.style.borderColor = "#3b82f6";
                     setTimeout(() => outputArea.style.borderColor = "#e2e8f0", 500);
                 } catch (e) {
+                    console.error(e);
                     alert("处理文件出错: " + e.message);
                 } finally {
                     overlay.classList.add('hidden');
