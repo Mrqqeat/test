@@ -34,17 +34,11 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
-        
         .glass-panel { background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        
         .toast-enter { transform: translateY(-20px); opacity: 0; }
         .toast-enter-active { transform: translateY(0); opacity: 1; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .toast-leave { opacity: 0; transition: all 0.2s ease-in; }
-
-        /* 给手机底部悬浮栏预留足够空间 */
         #assistant_prefix { padding-bottom: 160px; }
-        
-        /* 避免iOS输入框放大 */
         input[type="password"], input[type="text"], select, textarea { font-size: 16px !important; }
     </style>
 </head>
@@ -195,9 +189,12 @@
                     <button onclick="copyContent()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 hover:bg-dark-600 text-gray-300 flex items-center justify-center transition" title="复制全部内容">
                         <i class="ph ph-copy text-lg md:text-xl"></i>
                     </button>
-                    <button onclick="undoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 hover:bg-dark-600 text-gray-300 flex items-center justify-center transition" title="撤销到 AI 生成前">
-                        <i class="ph ph-arrow-u-up-left text-lg md:text-xl"></i>
-                    </button>
+                    <button id="undo-btn" onclick="undoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 text-gray-300 flex items-center justify-center transition" title="撤销 (Undo)">
+						<i class="ph ph-arrow-u-up-left text-lg md:text-xl"></i>
+					</button>
+					<button id="redo-btn" onclick="redoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 text-gray-300 flex items-center justify-center transition" title="重做 (Redo)">
+						<i class="ph ph-arrow-u-up-right text-lg md:text-xl"></i>
+					</button>
                 </div>
             </div>
         </section>
@@ -220,20 +217,40 @@
         };
 
         let controller;
-        let originalContent = ''; 
+		
+		// --- 撤销/重做历史记录系统 ---
+		let textHistory = [];
+		let historyIndex = -1;
+
+		// 保存当前文本状态到历史记录栈
+		function saveHistoryState(content) {
+			// 如果当前处于“撤销”状态后又发生了新操作，则丢弃当前位置之后的重做记录
+			if (historyIndex < textHistory.length - 1) {
+				textHistory = textHistory.slice(0, historyIndex + 1);
+			}
+			// 避免连续存入相同的内容
+			if (textHistory.length === 0 || textHistory[historyIndex] !== content) {
+				textHistory.push(content);
+				historyIndex++;
+				
+				// 限制历史记录最多 50 步，防止内存占用过大
+				if (textHistory.length > 50) {
+					textHistory.shift();
+					historyIndex--;
+				}
+			}
+			updateHistoryButtonsUI();
+		}
 
         // --- 手机端抽屉菜单逻辑 ---
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobile-overlay');
-            
             if (sidebar.classList.contains('-translate-x-full')) {
-                // 打开
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
                 setTimeout(() => overlay.classList.remove('opacity-0'), 10);
             } else {
-                // 关闭
                 sidebar.classList.add('-translate-x-full');
                 overlay.classList.add('opacity-0');
                 setTimeout(() => overlay.classList.add('hidden'), 300);
@@ -279,7 +296,10 @@
             document.getElementById(key).addEventListener('change', saveToLocal);
         });
 
-        window.addEventListener('DOMContentLoaded', loadFromLocal);
+        window.addEventListener('DOMContentLoaded', () => {
+			loadFromLocal();
+			saveHistoryState(elements.editor.value); // 初始化时把已有内容作为第 0 步
+		});
 
         // --- UI 逻辑 ---
         function updateSlidersUI() {
@@ -304,12 +324,13 @@
             }
         }
 
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                startGeneration();
-            }
-        });
+		document.addEventListener('keydown', (e) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+				e.preventDefault();
+				const stopBtn = document.getElementById('stop-btn');
+				!stopBtn.classList.contains('hidden') ? stopGeneration() : startGeneration();
+			}
+		});
 
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
@@ -336,6 +357,7 @@
 
         // --- 核心网络请求逻辑 ---
         async function startGeneration() {
+			if (!document.getElementById('stop-btn').classList.contains('hidden')) return;
             const apiKey = elements.apiKey.value.trim();
             const prefix = elements.editor.value;
 
@@ -352,7 +374,7 @@
                 return;
             }
 
-            originalContent = prefix; 
+            saveHistoryState(prefix);
             
             const requestBody = {
                 model: elements.modelSelect.value,
@@ -473,6 +495,7 @@
                 stopBtn.classList.add('hidden');
                 statusIndicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500/80"></span>就绪';
                 wrapper.classList.remove('animate-pulse-glow');
+				saveHistoryState(elements.editor.value);
             }
         }
 
@@ -486,31 +509,67 @@
             });
         }
 
-        function undoLast() {
-            if(originalContent && elements.editor.value !== originalContent) {
-                elements.editor.value = originalContent;
-                updateWordCount();
-                saveToLocal();
-                showToast("已撤销刚刚的续写", "info");
-            } else {
-                showToast("没有可以撤销的内容", "info");
-            }
-        }
+		// 更新撤销/还原按钮的可点击状态和视觉样式
+		function updateHistoryButtonsUI() {
+			function setButtonState(btn, enabled) {
+				if (enabled) {
+					btn.classList.remove('opacity-20', 'pointer-events-none', 'grayscale');
+					btn.classList.add('hover:bg-dark-600', 'cursor-pointer');
+				} else {
+					btn.classList.add('opacity-20', 'pointer-events-none', 'grayscale');
+					btn.classList.remove('hover:bg-dark-600', 'cursor-pointer');
+				}
+			}
+			setButtonState(document.getElementById('undo-btn'), historyIndex > 0);
+			setButtonState(document.getElementById('redo-btn'), historyIndex < textHistory.length - 1);
+		}
 
-        function clearAll() {
-            if(confirm("确定要清空除 API Key 以外的所有内容吗？")) {
-                storageKeys.forEach(key => {
-                    if(key !== 'api_key' && key !== 'model_select' && key !== 'temp' && key !== 'max_tokens') {
-                        document.getElementById(key).value = "";
-                        localStorage.removeItem(`ds_${key}`);
-                    }
-                });
-                updateWordCount();
-                originalContent = "";
-                showToast("工作区已清空");
-                if(window.innerWidth < 768) toggleMobileMenu();
-            }
-        }
+        function undoLast() {
+			const currentText = elements.editor.value;
+			// 如果用户在最后一次生成后手动打字了，先保存手动输入的状态，以便可以重做回来
+			if (historyIndex >= 0 && currentText !== textHistory[historyIndex]) {
+				saveHistoryState(currentText);
+			}
+
+			if (historyIndex > 0) {
+				historyIndex--;
+				elements.editor.value = textHistory[historyIndex];
+				updateWordCount();
+				saveToLocal();
+				updateHistoryButtonsUI();
+			}
+		}
+
+		function redoLast() {
+			if (historyIndex < textHistory.length - 1) {
+				historyIndex++;
+				elements.editor.value = textHistory[historyIndex];
+				updateWordCount();
+				saveToLocal();
+				updateHistoryButtonsUI();
+			}
+		}
+
+		function clearAll() {
+			if(confirm("确定要清空除 API Key 以外的所有内容吗？")) {
+				storageKeys.forEach(key => {
+					if(key !== 'api_key' && key !== 'model_select' && key !== 'temp' && key !== 'max_tokens') {
+						document.getElementById(key).value = "";
+						localStorage.removeItem(`ds_${key}`);
+					}
+				});
+				updateWordCount();
+				
+				// 重置历史记录栈
+				textHistory = [];
+				historyIndex = -1;
+				saveHistoryState(""); 
+				
+				showToast("工作区已清空");
+				if(window.innerWidth < 768) toggleMobileMenu();
+				updateHistoryButtonsUI();
+			}
+		}
 
         function exportDoc() {
             if(!elements.editor.value) {
@@ -521,7 +580,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `DeepSeek_Pro_${new Date().getTime()}.txt`;
+            a.download = `DeepSeek_${new Date().getTime()}.txt`;
             a.click();
             showToast("文件已下载");
         }
