@@ -158,9 +158,14 @@
                 <span class="hidden sm:inline">输入前缀内容，AI 将顺着你的思路续写</span>
                 <span class="sm:hidden">开始你的创作...</span>
                 <div class="flex items-center gap-3 md:gap-4">
-                    <span id="status-indicator" class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500/80"></span>就绪</span>
-                    <span class="font-mono bg-dark-800 px-2 py-0.5 rounded"><span id="word-count">0</span> 字</span>
-                </div>
+					<span id="status-indicator" class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500/80"></span>就绪</span>
+					<!-- Token 消耗与缓存统计 (默认隐藏) -->
+					<span id="token-info" class="hidden font-mono bg-dark-800 px-2 py-0.5 rounded text-gray-400">
+						Tokens: <span id="total-tokens" class="text-primary-400">0</span> 
+						(缓存: <span id="cached-tokens" class="text-green-400">0</span>)
+					</span>
+					<span class="font-mono bg-dark-800 px-2 py-0.5 rounded"><span id="word-count">0</span> 字</span>
+				</div>
             </div>
 
             <!-- 核心输入区 -->
@@ -372,6 +377,7 @@
             btn.classList.add('hidden');
             stopBtn.classList.remove('hidden');
             statusIndicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-primary-500 animate-ping"></span>思考中...';
+			document.getElementById('token-info').classList.add('hidden');
             
             // 避免在手机端添加光晕导致轻微卡顿
             if(window.innerWidth >= 768) wrapper.classList.add('animate-pulse-glow');
@@ -414,25 +420,41 @@
                     for (const line of lines) {
                         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                             try {
-                                const data = JSON.parse(line.slice(6));
-                                const content = data.choices[0].delta.content;
-                                if (content) {
-                                    elements.editor.value += content;
-                                    updateWordCount();
-                                    
-                                    // 只有光标接近底部时才滚动
-                                    if (!scrollTimeout) {
-                                        scrollTimeout = setTimeout(() => {
-                                            if (wrapper.scrollHeight - wrapper.scrollTop <= wrapper.clientHeight + 200) {
-                                                wrapper.scrollTop = wrapper.scrollHeight;
-                                            }
-                                            scrollTimeout = null;
-                                        }, 50);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("解析出错:", line);
-                            }
+								const data = JSON.parse(line.slice(6));
+								
+								// 1. 安全地提取正文内容
+								if (data.choices && data.choices.length > 0) {
+									const content = data.choices[0].delta?.content;
+									if (content) {
+										elements.editor.value += content;
+										updateWordCount();
+										
+										if (!scrollTimeout) {
+											scrollTimeout = setTimeout(() => {
+												if (wrapper.scrollHeight - wrapper.scrollTop <= wrapper.clientHeight + 200) {
+													wrapper.scrollTop = wrapper.scrollHeight;
+												}
+												scrollTimeout = null;
+											}, 50);
+										}
+									}
+								}
+								
+								// 2. 提取并显示 usage 统计
+								if (data.usage) {
+									const totalTokens = data.usage.total_tokens || 0;
+									// 兼容 DeepSeek 格式和 OpenAI 标准格式的缓存字段
+									const cachedTokens = data.usage.prompt_cache_hit_tokens || 
+														(data.usage.prompt_tokens_details && data.usage.prompt_tokens_details.cached_tokens) || 0;
+									
+									// 显示出来
+									document.getElementById('token-info').classList.remove('hidden');
+									document.getElementById('total-tokens').innerText = totalTokens;
+									document.getElementById('cached-tokens').innerText = cachedTokens;
+								}
+							} catch (e) {
+								console.error("解析出错:", line, e);
+							}
                         }
                     }
                 }
