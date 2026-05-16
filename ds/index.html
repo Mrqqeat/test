@@ -115,6 +115,19 @@
                             <option value="deepseek-v4-pro">deepseek-v4-pro</option>
                         </select>
                     </div>
+					<!-- 模块：推理设置 (Thinking) -->
+					<div>
+						<label class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 cursor-pointer w-max hover:text-gray-300 transition" onclick="openHelpModal()">
+							2.5 推理模式 (Reasoning)
+							<i class="ph-fill ph-question text-primary-400 text-sm"></i>
+						</label>
+						<select id="reasoning_mode" class="w-full bg-dark-800 md:bg-dark-900 border border-dark-border rounded-lg p-2.5 text-gray-200 focus:outline-none focus:border-primary-500 transition appearance-none cursor-pointer">
+							<option value="default" selected>默认 (Default/High)</option>
+							<option value="disabled">禁用推理 (Disabled)</option>
+							<option value="high">高强度推理 (High)</option>
+							<option value="max">最大推理 (Max)</option>
+						</select>
+					</div>
                 </div>
 
                 <div class="h-px bg-dark-border w-full"></div>
@@ -213,6 +226,74 @@
 
     <!-- Toast 弹窗 (居中适配手机) -->
     <div id="toast-container" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-[90%] sm:w-auto pointer-events-none"></div>
+	
+	<!-- [已优化] 推理模式帮助弹窗 -->
+    <div id="help-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <!-- 弹窗主体 -->
+        <div class="glass-panel w-full max-w-lg p-5 md:p-6 rounded-2xl transform scale-95 transition-transform duration-300 shadow-2xl" id="help-modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base md:text-lg font-bold text-gray-100 flex items-center gap-2.5">
+                    <i class="ph-fill ph-info text-primary-400 text-xl"></i> 
+                    <span>推理模式运行逻辑</span>
+                </h3>
+                <button onclick="closeHelpModal()" class="text-gray-400 hover:text-red-400 transition p-1 rounded-full hover:bg-dark-700">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="text-[13px] md:text-sm text-gray-300 max-h-[65vh] overflow-y-auto custom-scrollbar pr-2 -mr-2">
+                <div class="space-y-4">
+                    <!-- 情况一 -->
+                    <div class="bg-dark-900/40 p-4 rounded-xl border border-dark-border">
+                        <h4 class="text-primary-400 font-semibold mb-2 flex items-center gap-2">
+                            <i class="ph-fill ph-chat-circle-dots"></i> 
+                            <span>场景一：空白起步 (类聊天模式)</span>
+                        </h4>
+                        <p class="text-gray-400 mb-2.5">此时与普通的 AI 聊天表现基本一致：</p>
+                        <ul class="list-disc list-inside space-y-1.5 ml-1 text-gray-300">
+                            <li><span class="text-gray-200 font-medium">禁用 (Disabled)：</span>直接生成内容。</li>
+                            <li><span class="text-gray-200 font-medium">高强度 (High)：</span>进行简短思考，然后生成正文。</li>
+                            <li><span class="text-gray-200 font-medium">最大 (Max)：</span>进行深度、长篇的思考，然后生成正文。</li>
+                        </ul>
+                    </div>
+
+                    <!-- 情况二 -->
+                    <div class="bg-dark-900/40 p-4 rounded-xl border border-dark-border">
+                        <h4 class="text-primary-400 font-semibold mb-2 flex items-center gap-2">
+                            <i class="ph-fill ph-pen-nib"></i> 
+                            <span>场景二：已有内容 (AI 续写模式)</span>
+                        </h4>
+                        <p class="text-gray-400 mb-3">作为顺着前缀续写时，思考模式的影响会变小，但仍会巧妙地干预走向：</p>
+                        <ul class="space-y-4">
+                            <li class="relative pl-5 after:content-[''] after:absolute after:left-[2.5px] after:top-3.5 after:h-full after:w-px after:bg-dark-border">
+                                <div class="absolute left-0 top-1.5 w-1.5 h-1.5 bg-primary-500/80 rounded-full ring-4 ring-dark-900/40"></div>
+                                <span class="text-gray-200 font-medium">影响语气与走势</span>
+                                <p class="text-gray-400 mt-1">例如输入框只有 <code class="bg-primary-500/10 text-primary-300 font-mono px-1.5 py-0.5 rounded-md border border-primary-500/20 text-xs">好的，</code> 三个字符：</p>
+                                <ul class="list-disc list-inside text-gray-400 space-y-1 mt-2 ml-1">
+                                    <li><span class="font-semibold text-gray-300">开启思考：</span>99% 的概率会续接“用户...”。</li>
+                                    <li><span class="font-semibold text-gray-300">禁用思考：</span>大概率不会续接“用户...”。</li>
+                                </ul>
+                            </li>
+                            <li class="relative pl-5">
+                                <div class="absolute left-0 top-1.5 w-1.5 h-1.5 bg-primary-500/80 rounded-full ring-4 ring-dark-900/40"></div>
+                                <span class="text-gray-200 font-medium">手动接管思考</span>
+                                <p class="text-gray-400 mt-1">
+                                    若您在首行写下 <code class="bg-primary-500/10 text-primary-300 font-mono px-1.5 py-0.5 rounded-md border border-primary-500/20 text-xs">&lt;think&gt;</code> 标签并提供思路，此时无论是否开启推理模式，其影响都会变得微乎其微。
+                                </p>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-5 flex justify-end">
+                <button onclick="closeHelpModal()" class="bg-primary-600 hover:bg-primary-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition active:scale-95">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const elements = {
@@ -267,6 +348,31 @@
                 setTimeout(() => overlay.classList.add('hidden'), 300);
             }
         }
+		
+		// --- 帮助弹窗逻辑 ---
+        function openHelpModal() {
+            const modal = document.getElementById('help-modal');
+            const content = document.getElementById('help-modal-content');
+            modal.classList.remove('hidden');
+            // 延迟一点点移除 opacity-0 来触发顺滑的渐显和缩放动画
+            requestAnimationFrame(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            });
+        }
+
+        function closeHelpModal() {
+            const modal = document.getElementById('help-modal');
+            const content = document.getElementById('help-modal-content');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            // 等待 300ms 动画播放完毕后再 display:none
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
 
         // --- 桌面端专注模式逻辑 ---
         let isFocusMode = false;
@@ -282,7 +388,7 @@
         }
 
         // --- 自动保存系统 (Local Storage) ---
-        const storageKeys = ['api_key', 'model_select', 'user_prompt', 'temp', 'max_tokens', 'assistant_prefix'];
+        const storageKeys = ['api_key', 'model_select', 'reasoning_mode', 'user_prompt', 'temp', 'max_tokens', 'assistant_prefix'];
 
         function saveToLocal() {
             storageKeys.forEach(key => {
@@ -379,11 +485,6 @@
                 elements.apiKey.focus();
                 return;
             }
-            if (!prefix.trim()) {
-                showToast("请在输入区写下开场白！", "error");
-                elements.editor.focus();
-                return;
-            }
 
             saveHistoryState(prefix);
             
@@ -396,6 +497,13 @@
                 stream: true,
                 temperature: parseFloat(elements.temp.value)
             };
+			const reasoningMode = document.getElementById('reasoning_mode').value;
+			if (reasoningMode === 'disabled') {
+				requestBody.thinking = { type: "disabled" };
+			} else if (reasoningMode !== 'default') {
+				requestBody.thinking = { type: "enabled" };
+				requestBody.reasoning_effort = reasoningMode; // "high" 或 "max"
+			}
 
             const tokenLimit = parseInt(elements.maxTokens.value);
             if (tokenLimit < 8192) {
@@ -416,6 +524,7 @@
             if(window.innerWidth >= 768) wrapper.classList.add('animate-pulse-glow');
             
             controller = new AbortController();
+			let isReasoning = false; // 用于追踪是否正在思考阶段
 
             try {
                 const response = await fetch('https://api.deepseek.com/beta/chat/completions', {
@@ -457,19 +566,37 @@
 								
 								// 1. 安全地提取正文内容
 								if (data.choices && data.choices.length > 0) {
-									const content = data.choices[0].delta?.content;
-									if (content) {
-										elements.editor.value += content;
-										updateWordCount();
-										
-										if (!scrollTimeout) {
-											scrollTimeout = setTimeout(() => {
-												if (wrapper.scrollHeight - wrapper.scrollTop <= wrapper.clientHeight + 200) {
-													wrapper.scrollTop = wrapper.scrollHeight;
-												}
-												scrollTimeout = null;
-											}, 50);
+									const delta = data.choices[0].delta;
+									const reasoning = delta.reasoning_content; // 思考内容
+									const content = delta.content;             // 正文内容
+									
+									// 处理思考过程
+									if (reasoning) {
+										if (!isReasoning) {
+											elements.editor.value += "<think>\n"; // 思考开始，自动加标签
+											isReasoning = true;
 										}
+										elements.editor.value += reasoning;
+									}
+
+									// 处理正文内容
+									if (content) {
+										if (isReasoning) {
+											elements.editor.value += "\n</think>\n\n"; // 发现正文开始了，但思考标签还没关，则自动闭合
+											isReasoning = false;
+										}
+										elements.editor.value += content;
+									}
+									
+									// 更新字数和滚动（复用你原有的逻辑）
+									updateWordCount();
+									if (!scrollTimeout) {
+										scrollTimeout = setTimeout(() => {
+											if (wrapper.scrollHeight - wrapper.scrollTop <= wrapper.clientHeight + 200) {
+												wrapper.scrollTop = wrapper.scrollHeight;
+											}
+											scrollTimeout = null;
+										}, 50);
 									}
 								}
 								
