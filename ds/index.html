@@ -74,6 +74,9 @@
             <button onclick="toggleFocusMode()" class="hidden md:flex items-center gap-2 text-gray-400 hover:text-white transition" title="专注模式">
                 <i class="ph ph-corners-out text-lg"></i>
             </button>
+            <button onclick="openSavesModal()" class="flex items-center gap-1 md:gap-2 text-gray-400 hover:text-white transition bg-dark-800 px-3 py-1.5 rounded-lg border border-dark-border" title="保存列表">
+                <i class="ph ph-books text-lg"></i> <span class="hidden sm:inline">保存列表</span>
+            </button>
             <button onclick="exportDoc()" class="flex items-center gap-1 md:gap-2 text-gray-400 hover:text-white transition bg-dark-800 px-3 py-1.5 rounded-lg border border-dark-border">
                 <i class="ph ph-export text-lg"></i> <span class="hidden sm:inline">导出TXT</span>
             </button>
@@ -124,8 +127,24 @@
                         <select id="model_select" class="w-full bg-dark-800 md:bg-dark-900 border border-dark-border rounded-lg p-2.5 text-gray-200 focus:outline-none focus:border-primary-500 transition appearance-none cursor-pointer">
                             <option value="deepseek-v4-flash" selected>deepseek-v4-flash</option>
                             <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                            <option value="deepseek-v4-flash-vision-exp">deepseek-v4-flash-vision-exp</option>
                         </select>
                     </div>
+					<!-- 模块：视觉参考图 (Vision) -->
+					<div id="vision_container" class="hidden">
+						<label class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+							<span>2.1 视觉参考图 (Images)</span>
+							<span id="img_count" class="text-[10px] text-gray-500 font-mono">0 张</span>
+						</label>
+						<div class="space-y-2">
+							<input type="file" id="image_input" accept="image/*" multiple class="hidden" onchange="handleImageUpload(event)">
+							<button type="button" onclick="$('image_input').click()" class="w-full py-2 px-3 border border-dashed border-dark-border hover:border-primary-500/50 rounded-lg text-xs text-gray-400 hover:text-primary-300 bg-dark-800/40 hover:bg-dark-800 transition flex items-center justify-center gap-1.5">
+								<i class="ph ph-image text-base"></i> 添加图片 (支持多选)
+							</button>
+							<!-- 图片预览网格 -->
+							<div id="image_preview_list" class="grid grid-cols-4 gap-2 empty:hidden pt-1"></div>
+						</div>
+					</div>
 					<!-- 模块：推理设置 (Thinking) -->
 					<div>
 						<label class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 cursor-pointer w-max hover:text-gray-300 transition" onclick="openHelpModal()">
@@ -227,16 +246,19 @@
                     <button id="undo-btn" onclick="undoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 text-gray-300 flex items-center justify-center transition" title="撤销 (Undo)">
 						<i class="ph ph-arrow-u-up-left text-lg md:text-xl"></i>
 					</button>
-					<button id="redo-btn" onclick="redoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 text-gray-300 flex items-center justify-center transition" title="重做 (Redo)">
-						<i class="ph ph-arrow-u-up-right text-lg md:text-xl"></i>
-					</button>
+				<button id="redo-btn" onclick="redoLast()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 text-gray-300 flex items-center justify-center transition" title="重做 (Redo)">
+					<i class="ph ph-arrow-u-up-right text-lg md:text-xl"></i>
+				</button>
+				<button onclick="openSaveModal()" class="w-10 h-10 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-dark-700 hover:bg-dark-600 text-gray-300 flex items-center justify-center transition" title="保存工作区">
+					<i class="ph ph-floppy-disk text-lg md:text-xl"></i>
+				</button>
                 </div>
             </div>
         </section>
     </main>
 
     <!-- Toast 弹窗 (居中适配手机) -->
-    <div id="toast-container" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-[90%] sm:w-auto pointer-events-none"></div>
+    <div id="toast-container" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[90] flex flex-col gap-2 w-[90%] sm:w-auto pointer-events-none"></div>
 	
 	<!-- [已优化] 推理模式帮助弹窗 -->
     <div id="help-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
@@ -306,20 +328,98 @@
         </div>
     </div>
 
+	<!-- 保存 / 解密弹窗 -->
+    <div id="save-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="glass-panel w-full max-w-md p-5 md:p-6 rounded-2xl transform scale-95 transition-transform duration-300 shadow-2xl" id="save-modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base md:text-lg font-bold text-gray-100 flex items-center gap-2.5">
+                    <i class="ph-fill ph-floppy-disk text-primary-400 text-xl"></i>
+                    <span id="save-modal-title">保存当前工作区</span>
+                </h3>
+                <button onclick="closeSaveModal()" class="text-gray-400 hover:text-red-400 transition p-1 rounded-full hover:bg-dark-700">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+            <div id="save-name-field">
+                <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">保存名称 (可选)</label>
+                <input id="save-name" type="text" class="w-full bg-dark-800 border border-dark-border rounded-lg p-2.5 text-gray-200 focus:outline-none focus:border-primary-500 transition" placeholder="未命名保存">
+            </div>
+            <div class="mt-4">
+                <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">加密密码 <span class="text-gray-500 normal-case">(可选，留空则不加密)</span></label>
+                <input id="save-password" type="password" class="w-full bg-dark-800 border border-dark-border rounded-lg p-2.5 text-gray-200 focus:outline-none focus:border-primary-500 transition" placeholder="输入密码进行加密保存">
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeSaveModal()" class="px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white bg-dark-700 hover:bg-dark-600 transition">取消</button>
+                <button id="save-confirm-btn" onclick="confirmSaveModal()" class="bg-primary-600 hover:bg-primary-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition active:scale-95">保存</button>
+            </div>
+        </div>
+    </div>
+
+	<!-- 保存列表弹窗 -->
+    <div id="saves-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="glass-panel w-full max-w-lg p-5 md:p-6 rounded-2xl transform scale-95 transition-transform duration-300 shadow-2xl" id="saves-modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base md:text-lg font-bold text-gray-100 flex items-center gap-2.5">
+                    <i class="ph-fill ph-books text-primary-400 text-xl"></i>
+                    <span>保存列表</span>
+                </h3>
+                <button onclick="closeSavesModal()" class="text-gray-400 hover:text-red-400 transition p-1 rounded-full hover:bg-dark-700">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+            <div id="saves-list" class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 -mr-1"></div>
+            <div class="mt-5 flex justify-end">
+                <button onclick="closeSavesModal()" class="bg-primary-600 hover:bg-primary-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition active:scale-95">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        const $ = id => document.getElementById(id);
         const elements = {
-            apiKey: document.getElementById('api_key'),
-            modelSelect: document.getElementById('model_select'),
-            userPrompt: document.getElementById('user_prompt'),
-            temp: document.getElementById('temp'),
-            tempVal: document.getElementById('temp-val'),
-            maxTokens: document.getElementById('max_tokens'),
-            tokensVal: document.getElementById('tokens-val'),
-            editor: document.getElementById('assistant_prefix'),
-            wordCount: document.getElementById('word-count')
+            apiKey: $('api_key'), modelSelect: $('model_select'), userPrompt: $('user_prompt'),
+            temp: $('temp'), tempVal: $('temp-val'), maxTokens: $('max_tokens'), tokensVal: $('tokens-val'),
+            editor: $('assistant_prefix'), wordCount: $('word-count')
         };
 
         let controller;
+		
+		// --- 视觉模型图片管理 ---
+		let uploadedImages = []; // 存放 Base64 字符串
+
+		function handleImageUpload(e) {
+			const files = Array.from(e.target.files);
+			if (!files.length) return;
+
+			files.forEach(file => {
+				if (!file.type.startsWith('image/')) return;
+				const reader = new FileReader();
+				reader.onload = (event) => {
+					uploadedImages.push(event.target.result);
+					renderImagePreviews();
+				};
+				reader.readAsDataURL(file);
+			});
+			e.target.value = ''; // 重置 input 以便重复选择同名文件
+		}
+
+		function removeImage(index) {
+			uploadedImages.splice(index, 1);
+			renderImagePreviews();
+		}
+
+		function renderImagePreviews() {
+			const list = $('image_preview_list');
+			$('img_count').innerText = `${uploadedImages.length} 张`;
+			list.innerHTML = uploadedImages.map((src, idx) => `
+				<div class="relative group aspect-square rounded-lg overflow-hidden border border-dark-border bg-dark-900">
+					<img src="${src}" class="w-full h-full object-cover">
+					<button onclick="removeImage(${idx})" class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-red-400 transition" title="删除">
+						<i class="ph-bold ph-trash text-sm"></i>
+					</button>
+				</div>
+			`).join('');
+		}
 		
 		// --- 撤销/重做历史记录系统 ---
 		let textHistory = [];
@@ -347,8 +447,8 @@
 
         // --- 手机端抽屉菜单逻辑 ---
         function toggleMobileMenu() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('mobile-overlay');
+            const sidebar = $('sidebar');
+            const overlay = $('mobile-overlay');
             if (sidebar.classList.contains('-translate-x-full')) {
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
@@ -361,34 +461,13 @@
         }
 		
 		// --- 帮助弹窗逻辑 ---
-        function openHelpModal() {
-            const modal = document.getElementById('help-modal');
-            const content = document.getElementById('help-modal-content');
-            modal.classList.remove('hidden');
-            // 延迟一点点移除 opacity-0 来触发顺滑的渐显和缩放动画
-            requestAnimationFrame(() => {
-                modal.classList.remove('opacity-0');
-                content.classList.remove('scale-95');
-                content.classList.add('scale-100');
-            });
-        }
-
-        function closeHelpModal() {
-            const modal = document.getElementById('help-modal');
-            const content = document.getElementById('help-modal-content');
-            modal.classList.add('opacity-0');
-            content.classList.remove('scale-100');
-            content.classList.add('scale-95');
-            // 等待 300ms 动画播放完毕后再 display:none
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 300);
-        }
+        function openHelpModal() { openModal('help-modal', 'help-modal-content'); }
+        function closeHelpModal() { closeModal('help-modal', 'help-modal-content'); }
 
         // --- 桌面端专注模式逻辑 ---
         let isFocusMode = false;
         function toggleFocusMode() {
-            const sidebar = document.getElementById('sidebar');
+            const sidebar = $('sidebar');
             isFocusMode = !isFocusMode;
             if(isFocusMode) {
                 sidebar.classList.add('md:-ml-80'); 
@@ -403,7 +482,7 @@
 
         function saveToLocal() {
             storageKeys.forEach(key => {
-                localStorage.setItem(`ds_${key}`, document.getElementById(key).value);
+                localStorage.setItem(`ds_${key}`, $(key).value);
             });
             updateSlidersUI();
         }
@@ -412,7 +491,7 @@
             storageKeys.forEach(key => {
                 const saved = localStorage.getItem(`ds_${key}`);
                 if (saved !== null) {
-                    document.getElementById(key).value = saved;
+                    $(key).value = saved;
                 }
             });
             updateSlidersUI();
@@ -421,12 +500,22 @@
         }
 
         storageKeys.forEach(key => {
-            document.getElementById(key).addEventListener('input', saveToLocal);
-            document.getElementById(key).addEventListener('change', saveToLocal);
+            $(key).addEventListener('input', saveToLocal);
+            $(key).addEventListener('change', saveToLocal);
         });
-
+		
+		// 控制视觉上传组件的显隐（只要模型名称包含 'vision' 即显示）
+		function updateVisionVisibility() {
+			const isVision = elements.modelSelect.value.includes('vision');
+			const container = $('vision_container');
+			if (container) {
+				container.classList.toggle('hidden', !isVision);
+			}
+		}
+		elements.modelSelect.addEventListener('change', updateVisionVisibility);
         window.addEventListener('DOMContentLoaded', () => {
 			loadFromLocal();
+			updateVisionVisibility();
 			saveHistoryState(elements.editor.value); // 初始化时把已有内容作为第 0 步
 			elements.apiKey.addEventListener('change', fetchBalance); // 绑定修改 API Key 时触发余额更新
 		});
@@ -444,7 +533,7 @@
         elements.editor.addEventListener('input', updateWordCount);
 
         function toggleKeyVisibility() {
-            const icon = document.getElementById('key-icon');
+            const icon = $('key-icon');
             if (elements.apiKey.type === 'password') {
                 elements.apiKey.type = 'text';
                 icon.className = 'ph ph-eye-slash text-lg text-primary-400';
@@ -457,13 +546,13 @@
 		document.addEventListener('keydown', (e) => {
 			if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
 				e.preventDefault();
-				const stopBtn = document.getElementById('stop-btn');
+				const stopBtn = $('stop-btn');
 				!stopBtn.classList.contains('hidden') ? stopGeneration() : startGeneration();
 			}
 		});
 
         function showToast(message, type = 'success') {
-            const container = document.getElementById('toast-container');
+            const container = $('toast-container');
             const toast = document.createElement('div');
             const icon = type === 'success' ? '<i class="ph-fill ph-check-circle text-green-400 text-lg"></i>' : 
                          type === 'error' ? '<i class="ph-fill ph-warning-circle text-red-400 text-lg"></i>' : 
@@ -488,9 +577,9 @@
 		// --- 查询余额逻辑 ---
         async function fetchBalance() {
             const apiKey = elements.apiKey.value.trim();
-            const container = document.getElementById('balance_container');
-            const valSpan = document.getElementById('balance_val');
-            const refreshIcon = document.getElementById('balance_refresh_icon');
+            const container = $('balance_container');
+            const valSpan = $('balance_val');
+            const refreshIcon = $('balance_refresh_icon');
 
             if (!apiKey) {
                 container.classList.add('hidden');
@@ -532,7 +621,7 @@
 
         // --- 核心网络请求逻辑 ---
         async function startGeneration() {
-			if (!document.getElementById('stop-btn').classList.contains('hidden')) return;
+			if (!$('stop-btn').classList.contains('hidden')) return;
             const apiKey = elements.apiKey.value.trim();
             const prefix = elements.editor.value;
 
@@ -545,17 +634,35 @@
             }
 
             saveHistoryState(prefix);
-            
-            const requestBody = {
-                model: elements.modelSelect.value,
-                messages: [
-                    { role: "system", content: elements.userPrompt.value },
-                    { role: "assistant", content: prefix, prefix: true }
-                ],
-                stream: true,
-                temperature: parseFloat(elements.temp.value)
-            };
-			const reasoningMode = document.getElementById('reasoning_mode').value;
+			
+			// 1. 构建 messages 列表
+			const messages = [];
+			// 添加 system 设定
+			if (elements.userPrompt.value.trim()) {
+				messages.push({ role: "system", content: elements.userPrompt.value });
+			}
+			// 2. 如果有上传图片，组装成 user 消息发送（避免放在 assistant 中）
+			if (uploadedImages.length > 0) {
+				const userContent = [
+					// { type: "text", text: "请参考以下图片信息进行理解与续写：" },
+					...uploadedImages.map(imgBase64 => ({
+						type: "image_url",
+						image_url: { url: imgBase64 }
+					}))
+				];
+				messages.push({ role: "user", content: userContent });
+			}
+			// 3. assistant 保持纯文本续写前缀
+			messages.push({ role: "assistant", content: prefix, prefix: true });
+
+			const requestBody = {
+				model: elements.modelSelect.value,
+				messages: messages,
+				stream: true,
+				temperature: parseFloat(elements.temp.value)
+			};
+			
+			const reasoningMode = $('reasoning_mode').value;
 			if (reasoningMode === 'disabled') {
 				requestBody.thinking = { type: "disabled" };
 			} else if (reasoningMode !== 'default') {
@@ -568,15 +675,15 @@
                 requestBody.max_tokens = tokenLimit;
             }
 
-            const btn = document.getElementById('gen-btn');
-            const stopBtn = document.getElementById('stop-btn');
-            const statusIndicator = document.getElementById('status-indicator');
-            const wrapper = document.getElementById('editor-wrapper');
+            const btn = $('gen-btn');
+            const stopBtn = $('stop-btn');
+            const statusIndicator = $('status-indicator');
+            const wrapper = $('editor-wrapper');
 
             btn.classList.add('hidden');
             stopBtn.classList.remove('hidden');
             statusIndicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-primary-500 animate-ping"></span>思考中...';
-			document.getElementById('token-info').classList.add('hidden');
+			$('token-info').classList.add('hidden');
             
             // 避免在手机端添加光晕导致轻微卡顿
             if(window.innerWidth >= 768) wrapper.classList.add('animate-pulse-glow');
@@ -666,9 +773,9 @@
 														(data.usage.prompt_tokens_details && data.usage.prompt_tokens_details.cached_tokens) || 0;
 									
 									// 显示出来
-									document.getElementById('token-info').classList.remove('hidden');
-									document.getElementById('total-tokens').innerText = totalTokens;
-									document.getElementById('cached-tokens').innerText = cachedTokens;
+									$('token-info').classList.remove('hidden');
+									$('total-tokens').innerText = totalTokens;
+									$('cached-tokens').innerText = cachedTokens;
 								}
 							} catch (e) {
 								console.error("解析出错:", line, e);
@@ -706,19 +813,190 @@
             });
         }
 
-		// 更新撤销/还原按钮的可点击状态和视觉样式
-		function updateHistoryButtonsUI() {
-			function setButtonState(btn, enabled) {
-				if (enabled) {
-					btn.classList.remove('opacity-20', 'pointer-events-none', 'grayscale');
-					btn.classList.add('hover:bg-dark-600', 'cursor-pointer');
-				} else {
-					btn.classList.add('opacity-20', 'pointer-events-none', 'grayscale');
-					btn.classList.remove('hover:bg-dark-600', 'cursor-pointer');
+		// --- 保存/加载系统 (localStorage) ---
+		const SAVES_KEY = 'ds_saves';
+
+		function getSaves() {
+			try { return JSON.parse(localStorage.getItem(SAVES_KEY) || '[]'); } catch { return []; }
+		}
+		function setSaves(list) {
+			localStorage.setItem(SAVES_KEY, JSON.stringify(list));
+		}
+
+		function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); }
+		function unb64(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+
+		async function deriveKey(password, salt) {
+			const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+			return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+		}
+
+		async function encryptText(text, password) {
+			const salt = crypto.getRandomValues(new Uint8Array(16));
+			const iv = crypto.getRandomValues(new Uint8Array(12));
+			const key = await deriveKey(password, salt);
+			const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+			return { salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ct)) };
+		}
+
+		async function decryptText(enc, password) {
+			const key = await deriveKey(password, unb64(enc.salt));
+			const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, key, unb64(enc.data));
+			return new TextDecoder().decode(pt);
+		}
+
+		// --- 保存弹窗 (保存 / 解密读取共用) ---
+		let saveModalMode = 'save';
+		let pendingLoadId = null;
+
+		function openModal(id, contentId) {
+			const modal = $(id), content = $(contentId);
+			modal.classList.remove('hidden');
+			requestAnimationFrame(() => {
+				modal.classList.remove('opacity-0');
+				content.classList.remove('scale-95');
+				content.classList.add('scale-100');
+			});
+		}
+
+		function closeModal(id, contentId) {
+			const modal = $(id);
+			const content = $(contentId);
+			modal.classList.add('opacity-0');
+			content.classList.remove('scale-100');
+			content.classList.add('scale-95');
+			setTimeout(() => modal.classList.add('hidden'), 300);
+		}
+
+		function setupSaveModal(mode, title, btnText, hideName, pwPlaceholder) {
+			saveModalMode = mode;
+			$('save-modal-title').innerText = title;
+			$('save-confirm-btn').innerText = btnText;
+			$('save-name-field').classList.toggle('hidden', hideName);
+			$('save-password').value = '';
+			$('save-password').placeholder = pwPlaceholder;
+			if (!hideName) $('save-name').value = '';
+			openModal('save-modal', 'save-modal-content');
+		}
+
+		function openSaveModal() { setupSaveModal('save', '保存当前工作区', '保存', false, '输入密码进行加密保存'); }
+		function openPasswordModal(id) { pendingLoadId = id; setupSaveModal('load', '输入密码解密', '解密并读取', true, '请输入该保存的密码'); }
+
+		function closeSaveModal() { closeModal('save-modal', 'save-modal-content'); }
+
+		async function confirmSaveModal() {
+			const password = $('save-password').value;
+			if (saveModalMode === 'save') {
+				const payload = { prompt: elements.userPrompt.value, temp: elements.temp.value, content: elements.editor.value };
+				const name = $('save-name').value.trim() || '未命名';
+				const now = Date.now();
+				const save = password
+					? { id: now, name, time: now, encrypted: true, enc: await encryptText(JSON.stringify(payload), password) }
+					: { id: now, name, time: now, encrypted: false, payload };
+				const list = getSaves();
+				list.unshift(save);
+				setSaves(list);
+				closeSaveModal();
+				showToast(save.encrypted ? "已加密保存！" : "已保存！");
+			} else {
+				if (!password) { showToast("请输入密码", "error"); return; }
+				const save = getSaves().find(s => s.id === pendingLoadId);
+				if (!save) { showToast("保存不存在", "error"); return; }
+				try {
+					const payload = JSON.parse(await decryptText(save.enc, password));
+					applySave(payload);
+					closeSaveModal();
+					closeSavesModal();
+					showToast("已解密并读取！");
+				} catch (e) {
+					showToast("密码错误或数据损坏", "error");
 				}
 			}
-			setButtonState(document.getElementById('undo-btn'), historyIndex > 0);
-			setButtonState(document.getElementById('redo-btn'), historyIndex < textHistory.length - 1);
+		}
+
+		function applySave(payload) {
+			elements.userPrompt.value = payload.prompt || '';
+			elements.temp.value = payload.temp || '1.0';
+			elements.editor.value = payload.content || '';
+			updateSlidersUI();
+			updateWordCount();
+			saveToLocal();
+			saveHistoryState(elements.editor.value);
+		}
+
+		// --- 保存列表弹窗 ---
+		function openSavesModal() {
+			renderSavesList();
+			openModal('saves-modal', 'saves-modal-content');
+		}
+
+		function closeSavesModal() { closeModal('saves-modal', 'saves-modal-content'); }
+
+		const escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+		const esc = s => s.replace(/[&<>"']/g, c => escMap[c]);
+
+		function renderSavesList() {
+			const list = getSaves();
+			const container = $('saves-list');
+			if (!list.length) {
+				container.innerHTML = '<div class="text-center text-gray-500 text-sm py-8"><i class="ph ph-book-open text-2xl mb-2 block"></i>暂无保存，点击编辑器下方保存按钮开始</div>';
+				return;
+			}
+			container.innerHTML = list.map(s => `
+				<div class="flex items-center justify-between gap-3 bg-dark-800/60 border border-dark-border rounded-xl px-3.5 py-2.5">
+					<div class="min-w-0">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-gray-200 font-medium truncate">${esc(s.name)}</span>
+							${s.encrypted ? '<span class="shrink-0 text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded flex items-center gap-1"><i class="ph ph-lock-simple text-xs"></i>加密</span>' : ''}
+						</div>
+						<div class="text-xs text-gray-500 mt-0.5">${new Date(s.time).toLocaleString()}</div>
+					</div>
+					<div class="flex gap-1.5 shrink-0">
+						<button onclick="loadSave(${s.id})" class="w-9 h-9 rounded-lg bg-primary-600/20 hover:bg-primary-600 text-primary-300 hover:text-white flex items-center justify-center transition" title="读取">
+							<i class="ph ph-arrow-counter-clockwise text-lg"></i>
+						</button>
+						<button onclick="deleteSave(${s.id})" class="w-9 h-9 rounded-lg bg-dark-700 hover:bg-red-500/30 text-gray-400 hover:text-red-300 flex items-center justify-center transition" title="删除">
+							<i class="ph ph-trash text-lg"></i>
+						</button>
+					</div>
+				</div>
+			`).join('');
+		}
+
+		function loadSave(id) {
+			const save = getSaves().find(s => s.id === id);
+			if (!save) return;
+			if (save.encrypted) {
+				openPasswordModal(id);
+			} else {
+				applySave(save.payload);
+				closeSavesModal();
+				showToast("已读取该保存");
+			}
+		}
+
+		function deleteSave(id) {
+			const list = getSaves();
+			const save = list.find(s => s.id === id);
+			if (!save) return;
+			if (confirm(`确定删除保存「${save.name}」吗？`)) {
+				setSaves(list.filter(s => s.id !== id));
+				renderSavesList();
+				showToast("已删除");
+			}
+		}
+
+		// 更新撤销/还原按钮的可点击状态和视觉样式
+		function updateHistoryButtonsUI() {
+			const set = (btn, enabled) => {
+				btn.classList.toggle('opacity-20', !enabled);
+				btn.classList.toggle('pointer-events-none', !enabled);
+				btn.classList.toggle('grayscale', !enabled);
+				btn.classList.toggle('hover:bg-dark-600', enabled);
+				btn.classList.toggle('cursor-pointer', enabled);
+			};
+			set($('undo-btn'), historyIndex > 0);
+			set($('redo-btn'), historyIndex < textHistory.length - 1);
 		}
 
         function undoLast() {
@@ -751,11 +1029,13 @@
 			if(confirm("确定要清空除 API Key 以外的所有内容吗？")) {
 				storageKeys.forEach(key => {
 					if(key !== 'api_key' && key !== 'model_select' && key !== 'temp' && key !== 'max_tokens') {
-						document.getElementById(key).value = "";
+						$(key).value = "";
 						localStorage.removeItem(`ds_${key}`);
 					}
 				});
 				updateWordCount();
+				uploadedImages = [];
+				renderImagePreviews();
 				
 				// 重置历史记录栈
 				textHistory = [];
